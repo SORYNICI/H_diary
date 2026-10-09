@@ -135,21 +135,20 @@ public class MainActivity extends Activity {
         addButton(weights, button("− 2.5", false, () -> { weight = Math.max(0, weight - 2.5); render(); }));
         addButton(weights, button(number(weight) + " kg", false, () -> exactValue(true)));
         addButton(weights, button("+ 2.5", false, () -> { weight = Math.min(1000, weight + 2.5); render(); })); card.addView(weights);
-        addPresets(card, new int[]{0, 10, 20, 40, 60, 80}, true);
+        addPresets(card, new int[]{10, 20, 40, 60, 80}, true);
         card.addView(label("횟수", 14, false));
         LinearLayout counts = row();
         addButton(counts, button("−", false, () -> { reps = Math.max(1, reps - 1); render(); }));
         addButton(counts, button(reps + " 회", false, () -> exactValue(false)));
         addButton(counts, button("+", false, () -> { reps = Math.min(999, reps + 1); render(); })); card.addView(counts);
-        addPresets(card, new int[]{5, 8, 10, 12, 15, 20}, false);
+        addPresets(card, new int[]{8, 10, 12, 15, 20}, false);
         Button add = button("+  세트 기록", true, this::addSet);
         LinearLayout.LayoutParams full = new LinearLayout.LayoutParams(-1, -2); full.topMargin = dp(12); card.addView(add, full);
         card.addView(label("기록 후 같은 무게·횟수로 다음 세트를 추가할 수 있어요.", 14, false)); root.addView(card);
         renderEntries();
     }
     private void addPresets(LinearLayout card, int[] values, boolean isWeight) {
-        int available = getResources().getConfiguration().screenWidthDp - 64;
-        int columns = available >= 6 * 54 * getResources().getConfiguration().fontScale ? 6 : 3;
+        int columns = values.length;
         for (int start = 0; start < values.length; start += columns) {
             LinearLayout choices = row();
             for (int i = start; i < Math.min(start + columns, values.length); i++) {
