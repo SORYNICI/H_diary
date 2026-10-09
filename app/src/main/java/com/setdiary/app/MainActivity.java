@@ -112,9 +112,9 @@ public class MainActivity extends Activity {
         root.addView(label(date.toString() + (date.equals(LocalDate.now()) ? " · 오늘" : ""), 14, false));
         if (history) { renderHistory(); return; }
         root.addView(label("01  운동 부위", 18, true));
-        for (int start = 0; start < parts.length; start += 4) {
+        for (int[] indexes : new int[][]{{0, 1, 2}, {3, 4, 5, 6}}) {
             LinearLayout r = row();
-            for (int i = start; i < Math.min(start + 4, parts.length); i++) {
+            for (int i : indexes) {
                 final int index = i;
                 addButton(r, button(parts[i], part == i, () -> { part = index; exercise = exercises[index][0]; render(); }));
             } root.addView(r);
@@ -135,27 +135,46 @@ public class MainActivity extends Activity {
         addButton(weights, button("− 2.5", false, () -> { weight = Math.max(0, weight - 2.5); render(); }));
         addButton(weights, button(number(weight) + " kg", false, () -> exactValue(true)));
         addButton(weights, button("+ 2.5", false, () -> { weight = Math.min(1000, weight + 2.5); render(); })); card.addView(weights);
-        LinearLayout presets = row();
-        for (int w : new int[]{0, 10, 20, 40, 60}) addButton(presets, button("" + w, weight == w, () -> { weight = w; render(); }));
-        card.addView(presets); card.addView(label("횟수", 14, false));
+        addPresets(card, new int[]{0, 10, 20, 40, 60, 80}, true);
+        card.addView(label("횟수", 14, false));
         LinearLayout counts = row();
         addButton(counts, button("−", false, () -> { reps = Math.max(1, reps - 1); render(); }));
         addButton(counts, button(reps + " 회", false, () -> exactValue(false)));
         addButton(counts, button("+", false, () -> { reps = Math.min(999, reps + 1); render(); })); card.addView(counts);
-        LinearLayout quick = row();
-        for (int count : new int[]{5, 8, 10, 12, 15}) addButton(quick, button("" + count, reps == count, () -> { reps = count; render(); }));
-        card.addView(quick);
+        addPresets(card, new int[]{5, 8, 10, 12, 15, 20}, false);
         Button add = button("+  세트 기록", true, this::addSet);
         LinearLayout.LayoutParams full = new LinearLayout.LayoutParams(-1, -2); full.topMargin = dp(12); card.addView(add, full);
         card.addView(label("기록 후 같은 무게·횟수로 다음 세트를 추가할 수 있어요.", 14, false)); root.addView(card);
         renderEntries();
+    }
+    private void addPresets(LinearLayout card, int[] values, boolean isWeight) {
+        int available = getResources().getConfiguration().screenWidthDp - 64;
+        int columns = available >= 6 * 54 * getResources().getConfiguration().fontScale ? 6 : 3;
+        for (int start = 0; start < values.length; start += columns) {
+            LinearLayout choices = row();
+            for (int i = start; i < Math.min(start + columns, values.length); i++) {
+                final int value = values[i];
+                Button choice = button(String.valueOf(value), (isWeight ? weight : reps) == value, () -> {
+                    if (isWeight) weight = value; else reps = value;
+                    render();
+                });
+                choice.setContentDescription(value + (isWeight ? " kg 선택" : " 회 선택"));
+                addButton(choices, choice);
+            }
+            card.addView(choices);
+        }
     }
     private void changeDate(LocalDate next) { date = next; loadDay(); render(); }
     private void pickDate() {
         new DatePickerDialog(this, (v, y, m, d) -> changeDate(LocalDate.of(y, m + 1, d)), date.getYear(), date.getMonthValue() - 1, date.getDayOfMonth()).show();
     }
     private int setCount(String name) {
-        int count = 0; for (int i = 0; i < entries.length(); i++) if (name.equals(entries.optJSONObject(i).optString("exercise"))) count++; return count;
+        int count = 0;
+        for (int i = 0; i < entries.length(); i++) {
+            JSONObject set = entries.optJSONObject(i);
+            if (parts[part].equals(set.optString("part")) && name.equals(set.optString("exercise"))) count++;
+        }
+        return count;
     }
     private void exactValue(boolean isWeight) {
         EditText input = new EditText(this); input.setSingleLine(true);
@@ -181,19 +200,38 @@ public class MainActivity extends Activity {
     private double volume() {
         double total = 0; for (int i = 0; i < entries.length(); i++) { JSONObject s = entries.optJSONObject(i); total += s.optDouble("weight") * s.optInt("reps"); } return total;
     }
+    private Collection<List<Integer>> groupedEntries() {
+        Map<String, List<Integer>> groups = new LinkedHashMap<>();
+        for (int i = 0; i < entries.length(); i++) {
+            JSONObject set = entries.optJSONObject(i);
+            String key = set.optString("part") + "\u0000" + set.optString("exercise");
+            if (!groups.containsKey(key)) groups.put(key, new ArrayList<>());
+            groups.get(key).add(i);
+        }
+        return groups.values();
+    }
     private void renderEntries() {
         spacer(18); root.addView(label("하루 운동 일지", 22, true));
         if (entries.length() == 0) { root.addView(label("아직 기록한 운동이 없어요. 첫 세트를 추가해 주세요.", 16, false)); return; }
-        Set<String> names = new LinkedHashSet<>(); for (int i = 0; i < entries.length(); i++) names.add(entries.optJSONObject(i).optString("exercise"));
-        root.addView(label(names.size() + "개 운동  ·  " + entries.length() + "세트  ·  " + number(volume()) + " kg 총 볼륨", 15, true));
-        Map<String, Integer> counts = new HashMap<>();
-        for (int i = 0; i < entries.length(); i++) {
-            final int index = i; JSONObject s = entries.optJSONObject(i); String name = s.optString("exercise");
-            int n = counts.containsKey(name) ? counts.get(name) + 1 : 1; counts.put(name, n);
-            LinearLayout r = row(); r.setPadding(dp(10), dp(8), dp(10), dp(8));
-            TextView t = label(s.optString("part") + " · " + name + "\n" + n + "세트   " + number(s.optDouble("weight")) + " kg × " + s.optInt("reps") + "회", 16, false);
-            r.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
-            Button more = button("수정", false, () -> editSet(index)); r.addView(more); root.addView(r);
+        Collection<List<Integer>> groups = groupedEntries();
+        root.addView(label(groups.size() + "개 운동  ·  " + entries.length() + "세트  ·  " + number(volume()) + " kg 총 볼륨", 15, true));
+        for (List<Integer> group : groups) {
+            JSONObject first = entries.optJSONObject(group.get(0));
+            LinearLayout card = column(); card.setPadding(dp(12), dp(10), dp(12), dp(10));
+            card.setBackground(surface(Color.WHITE, 16));
+            card.addView(label(first.optString("part") + " · " + first.optString("exercise"), 18, true));
+            card.addView(label(group.size() + "세트", 14, false));
+            for (int n = 0; n < group.size(); n++) {
+                final int index = group.get(n); JSONObject set = entries.optJSONObject(index);
+                LinearLayout r = row();
+                TextView t = label((n + 1) + "세트   " + number(set.optDouble("weight")) + " kg × " + set.optInt("reps") + "회", 16, false);
+                r.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+                Button more = button("수정", false, () -> editSet(index));
+                more.setContentDescription(first.optString("exercise") + " " + (n + 1) + "세트 수정");
+                r.addView(more); card.addView(r);
+            }
+            LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-1, -2);
+            layout.topMargin = dp(10); root.addView(card, layout);
         }
         LinearLayout actions = row();
         addButton(actions, button("이미지 저장", false, () -> exportImage(false)));
@@ -240,7 +278,8 @@ public class MainActivity extends Activity {
     private void exportImage(boolean share) {
         if (entries.length() == 0) return;
         try {
-            int height = 330 + entries.length() * 92;
+            Collection<List<Integer>> groups = groupedEntries();
+            int height = 270 + groups.size() * 90 + entries.length() * 56;
             if (height > 20000) { toast("세트 수가 너무 많아 이미지를 만들 수 없습니다."); return; }
             Bitmap image = Bitmap.createBitmap(1080, height, Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(image); canvas.drawColor(Color.rgb(244, 247, 249));
@@ -248,14 +287,19 @@ public class MainActivity extends Activity {
             canvas.drawText("SET DIARY / 세트일지", 60, 65, paint); paint.setColor(ink); paint.setTextSize(48);
             canvas.drawText(date.toString() + " 운동 일지", 60, 140, paint); paint.setTextSize(28);
             canvas.drawText(entries.length() + "세트 · 총 볼륨 " + number(volume()) + " kg", 60, 195, paint);
-            Map<String, Integer> counts = new HashMap<>();
-            for (int i = 0; i < entries.length(); i++) {
-                JSONObject s = entries.optJSONObject(i); String name = s.optString("exercise");
-                int n = counts.containsKey(name) ? counts.get(name) + 1 : 1; counts.put(name, n);
-                paint.setTextSize(30); paint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-                canvas.drawText(s.optString("part") + " · " + name, 60, 270 + i * 92, paint);
-                paint.setTextSize(27); paint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
-                canvas.drawText(n + "세트    " + number(s.optDouble("weight")) + " kg × " + s.optInt("reps") + "회", 60, 308 + i * 92, paint);
+            int y = 260;
+            for (List<Integer> group : groups) {
+                JSONObject first = entries.optJSONObject(group.get(0));
+                paint.setColor(green); paint.setTextSize(32); paint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+                canvas.drawText(first.optString("part") + " · " + first.optString("exercise") + "  /  " + group.size() + "세트", 60, y, paint);
+                y += 56;
+                paint.setColor(ink); paint.setTextSize(28); paint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+                for (int n = 0; n < group.size(); n++) {
+                    JSONObject set = entries.optJSONObject(group.get(n));
+                    canvas.drawText((n + 1) + "세트    " + number(set.optDouble("weight")) + " kg × " + set.optInt("reps") + "회", 80, y, paint);
+                    y += 56;
+                }
+                y += 34;
             }
             String filename = "diary-" + date + ".png";
             if (share) {
